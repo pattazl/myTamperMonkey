@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         网址监控通知
 // @namespace    http://tampermonkey.net/
-// @version      0.1
-// @description  监控是否跳转到特殊网址，如果跳转则通过webhook通知，可用于登录失效识别等
+// @version      0.2
+// @description  监控是否跳转到特殊网址，如果跳转则通过webhook（飞书等）通知，可用于登录失效识别等
 // @author       Austin.Young
 // @match        *
 // @include      *
@@ -12,12 +12,13 @@
 // @grant        GM.xmlHttpRequest
 // @connect      self
 // @connect      localhost
-// @connect      https://*.feishu.cn
-// @connect      *://*.feishu.cn
-// @connect      *
+// @connect      www.feishu.cn
+// @connect      open.feishu.cn
+// @connect      *  // 不支持 * 匹配
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @license MIT
+
 // ==/UserScript==
 let webHookList = []
 let matchUrlList = []
@@ -35,11 +36,20 @@ const preIdName = 'austinConfig_';
     // 进行检测
     detectUrl()
 })();
-var newElement;
+var newElement =null,myshadowRoot =null;
+function getDom(){
+    let dom;
+    if(myshadowRoot!=null){
+        dom = myshadowRoot
+    }else{
+        dom = document
+    }
+    return dom
+}
 // 所有对象增加 austinConfig 前缀
 function $(id,ignore) {
     let domId = preIdName + id
-    let obj = document.getElementById(domId)
+    let obj = getDom().getElementById(domId)
     if (obj == null) {
         if(ignore)
         {
@@ -52,9 +62,13 @@ function $(id,ignore) {
     return obj
 }
 function addConfig() {
-    if($('Panel',true))return;// 已经创建过
+    if(newElement!=null)return;// 已经创建过
     newElement = document.createElement("div");
-    newElement.innerHTML = `
+    // 创建 Shadow Root
+    // myshadowRoot = document.body.attachShadow({ mode: 'open' });
+    // myshadowRoot.appendChild(newElement)
+    myshadowRoot = newElement.attachShadow({ mode: 'open' });
+    myshadowRoot.innerHTML = `
     <div style="inset: 10% auto auto 20%; border: 1px solid black; 
     margin: 0px; max-height: 95%; opacity: 1;
     position: fixed; display: block;
@@ -70,35 +84,36 @@ function addConfig() {
                     style="border:1px white solid;cursor: pointer;" title="关闭">❌</span>
             </div>
         </div>
-        <div style="overflow: auto;height: 480px;width: 100%;background-color:aliceblue;">
+        <div style="overflow: auto;height: 600px;width: 100%;background-color:aliceblue;">
             <div style="padding: 2px;">
-                <div style="font-weight: bold;">通知参数</div>
-                <input type="button" id="btNoticeList" value="显示/修改通知JSON">发送内容规则:{MatchName}=监控名称,{Url}=当时访问的网址
+                <div style="font-weight: bold;">通知参数 <input type="button" id="btNoticeList" value="显示/修改通知JSON"></div>
+                举例 [{"name":"飞书","url":"https://open.feishu.cn/open-apis/bot/xxx","text":"[过期]url:{Url},监控:{MatchName}"}]
                 <table border="1" style="border-collapse: collapse;">
                     <thead style="background-color:rgb(49, 49, 49);font-weight: bold;color: white;">
                         <td>序号</td>
-                        <td>通知名称</td>
-                        <td>Webhook地址</td>
-                        <td>发送内容</td>
+                        <td>通知名称(name,不能重复)</td>
+                        <td>Webhook地址(url)</td>
+                        <td>发送内容(text,发送的内容,{MatchName}=监控名称,{Url}=当时访问的网址)</td>
                         <td>操作</td>
                     </thead>
                     <tbody id="NoticeShow"></tbody>
                 </table>
-                <textarea id="txtNoticeList" style="display: none;" cols="80" rows="5"
+                <textarea id="txtNoticeList" style="display: none;" cols="100" rows="7"
                     placeholder='JSON格式数组，如下:&#10;[{"name":"飞书","url":"https://www.feishu.cn/xxx","text":"机器人"}]'></textarea>
                 <hr />
                 <div style="font-weight: bold;">网址监控参数 <input type="button" id="btMatchList" value="显示/修改监控JSON"></div>
+                举例 [{"name":"京东","type":0,"strMatch":"passport.jd.com/new/login.aspx","notice":"飞书"}]
                 <table border="1" style="border-collapse: collapse;">
                     <thead style="background-color:rgb(49, 49, 49);font-weight: bold;color: white;">
                         <td>序号</td>
-                        <td>监控名称</td>
-                        <td>处理类型</td>
-                        <td>匹配内容</td>
-                        <td>通知名</td>
+                        <td>监控名称(name)</td>
+                        <td>处理类型(type,0=包含,1=正则)</td>
+                        <td>匹配内容(strMatch,字符串或正则表达式)</td>
+                        <td>通知名(notice,对应的通知名称)</td>
                     </thead>
                     <tbody id="UrlMatch"></tbody>
                 </table>
-                <textarea id="txtMatchUrlList" style="display: none;" cols="80" rows="5"
+                <textarea id="txtMatchUrlList" style="display: none;" cols="100" rows="7"
                     placeholder='JSON格式数组，类型参数 0 为字符串包含匹配，1为正则匹配。如下:&#10;[{"name":"名称","type":0,"strMatch":"https://www.feishu.cn/xxx","notice":""}]'></textarea>
                 <hr />
                 <div style="font-weight: bold;">最近消息列表(保留最近50次) <input type="button" id="btClear" value="清空历史"><br/></div>
@@ -138,6 +153,8 @@ function addConfig() {
 }
 function closeIt() {
     document.body.removeChild(newElement);
+    newElement = null
+    myshadowRoot =null
 }
 function NoticeList() {
     checkList('txtNoticeList', webHookList, showNoticeList)
@@ -150,7 +167,7 @@ function checkList(objId, objList, fun) {
     if (list.style.display == 'none') {
         list.style.display = ''
         if (objList.length > 0) {
-            list.value = JSON.stringify(objList)
+            list.value = JSON.stringify(objList,null,2)
         } else {
             list.value = ''
         }
@@ -184,11 +201,11 @@ function showNoticeList(val) {
     webHookList = obj.arr
     let bt = `${preIdName}BtTest`
     let html = webHookList.map((x, i) => {
-        return `<tr><td>${i+1}</td><td>${x.name}</td><td>${x.url}</td><td>${x.text}</td><td><input type="button" name="${bt}" value="测试"></td></tr>`
+        return `<tr><td>${i+1}</td><td>${x.name}</td><td>${x.url}</td><td>${x.text}</td><td><input type="button" class="${bt}" value="测试"></td></tr>`
     }).join('')
     $('NoticeShow').innerHTML = html
     // 绑定事件
-    document.getElementsByName(bt).forEach((x,i)=>{
+    getDom().querySelectorAll('.'+bt).forEach((x,i)=>{
         x.onclick = function(){sendWebHook(i)}
     })
 }
@@ -228,23 +245,32 @@ function sendWebHook(i) {
     let obj = webHookList[i]
     if(obj!=null)sendWebHookCore(obj)
 }
+// matchName 为null 表示是手工测试触发，不是自动任务触发
 async function sendWebHookCore(obj,matchName,triggerUrl) {
     let content = obj.text
     content = content.replace(/{MatchName}/ig,matchName)
     content = content.replace(/{Url}/ig,triggerUrl)
-    const r = await GM.xmlHttpRequest(
-        {
-            method: "GET",
-            url: obj.url,
-            headers: {
-                "Content-Type": "application/json"
-            },
-            data: JSON.stringify({"msg_type":"text","content":{"text":content}}),
-            method:"POST"
-        }
-    ).catch(e => console.error(e));
+    let r ;
+    try {
+        r = await GM.xmlHttpRequest(
+            {
+                method: "GET",
+                url: obj.url,
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                data: JSON.stringify({ "msg_type": "text", "content": { "text": content } }),
+                method: "POST"
+            }
+        );
+    } catch (e) {
+        console.error(e)
+        alert('发送异常:'+e.error)
+        return
+    }
+    
     let rt = r.responseText
-    let res = {}
+    let res = {},resTxt=''
     try{
         res = JSON.parse(rt);
     }catch (e)
