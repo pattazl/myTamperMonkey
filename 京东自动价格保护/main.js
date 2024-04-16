@@ -12,20 +12,14 @@
 let globalCount = 0;
 let refreshHour = 8;
 let delayClickSec = 15;
-let sendFun = "";
 let globalInterval1 = null;
 let globalInterval2 = null;
-
-let funSendMsg = function () { };
 
 (function () {
     'use strict';
     // 匹配地址
     if (location.href.indexOf('//pcsitepp-fm.jd.com/') > -1) {
         autoPrice()
-    } else if (location.href.indexOf('//passport.jd.com/') > -1) {
-        readPara();
-        funSendMsg()
     }
 })();
 
@@ -50,7 +44,6 @@ function autoPrice() {
     let html = `<span style="float:right;padding:0 5px;margin-right:40px;">
     <input id="id_delayClickSec" type="number" min="1" max="9999">秒后自动点击,
     <input id="id_refreshHour" type="number" min="1" max="999">小时后自动刷新,
-   通知代码:<textarea id="id_sendFun" rows="2" cols="20" placeholder="函数实现,一般使用webhook方式发送消息"></textarea>,
    <input id="jdonclick" type="button" value="设置"/>
    <input id="statstop" type="button" value="停止"/>
    </span>`
@@ -78,35 +71,16 @@ function savePara() {
     stopIt()
     refreshHour = $('#id_refreshHour').val();
     delayClickSec = $('#id_delayClickSec').val();
-    let testSendFun = $('#id_sendFun').val();
-    try {
-        funSendMsg = createFun(testSendFun)
-    } catch (error) {
-        alert('函数异常,e:' + error)
-        $('#id_sendFun').val(sendFun)
-        return
-    }
-    sendFun = testSendFun
     localStorage.setItem('austinPrice-refreshHour', refreshHour)
     localStorage.setItem('austinPrice-delayClickSec', delayClickSec)
-    localStorage.setItem('austinPrice-sendFun', sendFun)
 }
 function readPara() {
     refreshHour = localStorage.getItem('austinPrice-refreshHour') ?? refreshHour
     delayClickSec = localStorage.getItem('austinPrice-delayClickSec') ?? delayClickSec
-    let testSendFun = localStorage.getItem('austinPrice-sendFun') ?? sendFun
-    try {
-        funSendMsg = createFun(testSendFun);
-    } catch (error) {
-        console.log('函数异常,e:' + error)
-    }
-    sendFun = testSendFun;
 
     if(noDom("#id_refreshHour"))return;
     $('#id_refreshHour').val(refreshHour);
     $('#id_delayClickSec').val(delayClickSec);
-    $('#id_sendFun').val(sendFun);
-
 }
 function statStop() {
     if (globalInterval1 != null) {
