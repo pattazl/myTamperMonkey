@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网址监控通知
 // @namespace    http://tampermonkey.net/
-// @version      0.2
+// @version      0.3
 // @description  监控是否跳转到特殊网址，如果跳转则通过webhook（飞书等）通知，可用于登录失效识别等
 // @author       Austin.Young
 // @match        *
@@ -23,6 +23,7 @@
 let webHookList = []
 let matchUrlList = []
 let historyList = []
+let detectDelay = 1000;
 const preIdName = 'austinConfig_';
 
 (function () {
@@ -34,7 +35,8 @@ const preIdName = 'austinConfig_';
         autoClose: true
     });
     // 进行检测
-    detectUrl()
+    getPara();
+    setTimeout(detectUrl,detectDelay);
 })();
 var newElement =null,myshadowRoot =null;
 function getDom(){
@@ -67,15 +69,20 @@ function addConfig() {
     // 创建 Shadow Root
     // myshadowRoot = document.body.attachShadow({ mode: 'open' });
     // myshadowRoot.appendChild(newElement)
-    myshadowRoot = newElement.attachShadow({ mode: 'open' });
+    // newElement.style.color="black"
+    // newElement.style.textAlign="left"
+    // newElement.style.padding="2px"
+    // newElement.style.margin="0px"
+    newElement.style.all ="initial"
+    myshadowRoot = newElement.attachShadow({ mode: 'closed' });
     myshadowRoot.innerHTML = `
-    <div style="inset: 10% auto auto 20%; border: 1px solid black; 
+    <div style="inset: 10% auto auto 20%; border: 1px solid black;
     margin: 0px; max-height: 95%; opacity: 1;
     position: fixed; display: block;
-    min-width: 320px;width:60%;max-width: 95%; 
+    min-width: 320px;width:60%;max-width: 95%;
     z-index: 2147483647; overflow: auto; padding: 0px;" id="Panel">
         <div
-            style="padding: 2px; background-color: black;color: #c7ed1c;font-weight: bold;font-size:large; text-align: center;line-height: 26px;">
+            style="padding: 2px; background-color: rgb(49, 49, 49);color: #c7ed1c;font-weight: bold;font-size:large; text-align: center;line-height: 26px;">
             参数设置
             <div style="float:right;">
                 <span style="border:1px white solid;cursor: pointer;" id="Refresh" title="刷新">🔁</span>
@@ -86,6 +93,8 @@ function addConfig() {
         </div>
         <div style="overflow: auto;height: 600px;width: 100%;background-color:aliceblue;">
             <div style="padding: 2px;">
+                <div style="font-weight: bold;">页面载入后延时<input type="number" id="btDelay" min="0" step="1000" placeholder="毫秒数" style="width:5em"/>毫秒检测</div>
+                <hr/>
                 <div style="font-weight: bold;">通知参数 <input type="button" id="btNoticeList" value="显示/修改通知JSON"></div>
                 举例 [{"name":"飞书","url":"https://open.feishu.cn/open-apis/bot/xxx","text":"[过期]url:{Url},监控:{MatchName}"}]
                 <table border="1" style="border-collapse: collapse;">
@@ -120,7 +129,7 @@ function addConfig() {
                 <textarea id="txtLastMsg" cols="100" rows="9" readonly="readonly"></textarea>
             </div>
         </div>
-    </div>    
+    </div>
 `.replace(/id="(.*?)"/g, 'id="' + preIdName + '$1"')  // 全部临时替换为
     document.body.appendChild(newElement);
     $('Save').onclick = function () {
@@ -130,15 +139,14 @@ function addConfig() {
     }
     $('Close').onclick = closeIt
     $('Refresh').onclick = function () {
-        if(saveConfig()){
-            closeIt()
-        }
+        closeIt()
         addConfig()
         return;
     }
     getPara()
     showNoticeList(webHookList)
     showMatchList(matchUrlList)
+    $('btDelay').value = detectDelay
     $('txtLastMsg').value = JSON.stringify(historyList, null, 2)
     $('btClear').onclick = function(){
         if(confirm('确认清空历史记录?'))
@@ -226,6 +234,7 @@ function getPara() {
     webHookList = GM_getValue(preIdName + 'Notice', []);
     matchUrlList = GM_getValue(preIdName + 'Match', []);
     historyList = GM_getValue(preIdName + 'History', []);
+    detectDelay = GM_getValue(preIdName + 'Delay', detectDelay ); // 延时检测毫秒数
 }
 function saveConfig() {
     if($('txtNoticeList').style.display!='none'){
@@ -236,8 +245,11 @@ function saveConfig() {
         alert('网址监控参数未保存，请点击 显示/修改 按钮')
         return false
     }
+    let tmpDelay = parseInt($('btDelay').value)
+    detectDelay = isNaN(tmpDelay)?detectDelay:tmpDelay
     GM_setValue(preIdName + 'Notice', webHookList);
     GM_setValue(preIdName + 'Match', matchUrlList);
+    GM_setValue(preIdName + 'Delay', detectDelay);
     console.log('saveConfig')
     return true
 }
@@ -248,8 +260,12 @@ function sendWebHook(i) {
 // matchName 为null 表示是手工测试触发，不是自动任务触发
 async function sendWebHookCore(obj,matchName,triggerUrl) {
     let content = obj.text
-    content = content.replace(/{MatchName}/ig,matchName)
-    content = content.replace(/{Url}/ig,triggerUrl)
+    if(matchName){
+        content = content.replace(/{MatchName}/ig,matchName)
+    }
+    if(triggerUrl){
+        content = content.replace(/{Url}/ig,triggerUrl)
+    }
     let r ;
     try {
         r = await GM.xmlHttpRequest(
@@ -268,7 +284,7 @@ async function sendWebHookCore(obj,matchName,triggerUrl) {
         alert('发送异常:'+e.error)
         return
     }
-    
+
     let rt = r.responseText
     let res = {},resTxt=''
     try{
@@ -303,7 +319,6 @@ async function sendWebHookCore(obj,matchName,triggerUrl) {
 }
 function detectUrl()
 {
-    getPara()
     let url = location.href
     matchUrlList.forEach(x=>{
         // 地址匹配
